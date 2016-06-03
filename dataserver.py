@@ -22,6 +22,11 @@ from Queue import Empty, Queue; theQueue=Queue()
 import json
 
 class catcher(Client):
+	"""
+	This the catcher class that recieves and otherwise 
+	deals with incoming images from azcam. It sub-class
+	of the Thread class and runs as its own thread. 
+	"""
 	def __init__( self, (client, address) ):
 		Client.__init__( self, (client, address) )
 		self.size = 256
@@ -34,13 +39,17 @@ class catcher(Client):
 		self.y = 0
 		self.dCount = 0
 		self.client.settimeout( 0.5 )
-		#self.img = numpy.zeros( ( 765, 510 ), dtype=numpy.int )
 		self.clobber = False
 		self.ALL = ""
 		self.ds9 = theDS9
 
 
 	def run(self):
+		"""
+		Most of the important work is done here
+		This is called by the Server class and
+		starts the new thread. 	
+		"""
 		running = 1
 		while running:
 			try:
@@ -77,10 +86,12 @@ class catcher(Client):
 				
 				with open( "{}/{}".format( self.fpath, self.fname ), 'wb' ) as imfile:
 					#write the raw image
+					if self.ALL.endswith("\n"):
+						self.ALL = self.ALL[:-1]
 					imfile.write( self.ALL )
 				del self.ALL
 					
-				
+				 
 				rawfitsfd = fits.open(  "{}/{}".format( self.fpath, self.fname ) )
 				mergedfitsfd = mergem4k( rawfitsfd )
 				rawfitsfd.close()
@@ -98,7 +109,7 @@ class catcher(Client):
 				count = 0
 				for obj in objs:
 					
-					fwhm = 2*np.sqrt(math.log(2)*(obj['a'] + obj['b']))
+					fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
 					
 					if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 10.0:# its fairly round
 						if obj['npix'] > 25:# Weed out hot pixels
@@ -108,10 +119,21 @@ class catcher(Client):
 								self.ds9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
 							
 							fwhms.append(fwhm)
-							count+=1
-							if count > 500: break
+					if len(fwhms) == 0:
+						avgfwhm = False
+					else:
+						avgfwhm = sum(fwhms)/len(fwhms)
+					count+=1
+					if count > 500: break
+					
+					try:
+						focus = tel.reqFOCUS()
+					except Exception as err:
+						focus=False
+						print err	
 							
-				theQueue.put( {"name":self.fname, "fwhm": sum(fwhms)/len(fwhms), 'focus':tel.reqFOCUS()}, block=False )
+							
+				theQueue.put( {"name":self.fname, "fwhm": avgfwhm, 'focus':focus}, block=False )
 				"""
 				tmpname = tempfile.mktemp()
 				fname = "{0}.fits".format( tmpname )
@@ -166,15 +188,18 @@ class catcher(Client):
 		return objs
 	
 	def handle( self, data ):
+		"""
+		This method is called in the run method
+		when data is availabe. 
+		"""
 		if self.size == 256:
-
+			#grab the first 256 bytes
+			#which is metadata. 
 			self.infoStr = data
+			
 			metavals = self.infoStr.split()
 
-			
-			
 
-			
 			self.fsize =int( metavals[0] ) 
 			self.fpath = os.path.dirname( metavals[1] )
 			self.fname = os.path.basename( metavals[1] )
@@ -198,10 +223,7 @@ class catcher(Client):
 
 	
 showfwhm = True
-def main():
-	s=Server( port=6543, handler=catcher )
 
-	s.run()
 	
 
 
@@ -246,12 +268,15 @@ theDS9 = DS9()
 theDS9.set("regions show no")
 SOLVE = False
 
+s=Server( port=6543, handler=catcher )
+serverThread = Thread( target=s.run )
+#serverThread.start()
 
-cmdThread = Thread( target=cmdserver )
-cmdThread.setDaemon(True)
-cmdThread.start()
+#cmdThread = Thread( target=cmdserver )
+#cmdThread.setDaemon(True)
+#cmdThread.start()
 
-main()
+#main()
 
 
 
