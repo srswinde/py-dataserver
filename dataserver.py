@@ -11,15 +11,20 @@ import select
 import math
 from astro.locales import mtlemmon
 import sys
-from pyds9 import DS9
+from ds9 import ds9 as DS9
 from m4kproc import mergem4k
 from fits_solver.m4k_imclient import main as imsolver
 from fits_solver.m4k_imclient import getobjects, mkfitstable
-from telescope import kuiper; tel=kuiper()
+from telescope import kuiper
 import numpy as np
 from threading import Thread
 from Queue import Empty, Queue; theQueue=Queue()
 import json
+
+try:
+	tel=kuiper()
+except Exception:
+	tel=False
 
 class catcher(Client):
 	"""
@@ -127,10 +132,13 @@ class catcher(Client):
 					if count > 500: break
 					
 					try:
-						focus = tel.reqFOCUS()
+						if tel:
+							focus = tel.reqFOCUS()
+						else:
+							focus = False
 					except Exception as err:
 						focus=False
-						print err	
+						#print err	
 							
 							
 				theQueue.put( {"name":self.fname, "fwhm": avgfwhm, 'focus':focus}, block=False )
@@ -261,6 +269,11 @@ def cmdserver(  ):
 			except Empty:
 				break
 	
+
+def testThread(  ):
+	while 1:
+		print "foo"
+		time.sleep(5.0)
 		
 
 global theDS9
@@ -270,13 +283,17 @@ SOLVE = False
 
 s=Server( port=6543, handler=catcher )
 serverThread = Thread( target=s.run )
+#serverThread.setDaemon(True)
 #serverThread.start()
+
 
 #cmdThread = Thread( target=cmdserver )
 #cmdThread.setDaemon(True)
 #cmdThread.start()
 
 #main()
+
+
 
 
 
