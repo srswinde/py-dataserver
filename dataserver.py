@@ -1,24 +1,25 @@
+#!/usr/bin/ipython -i
+
 from server import Server, Client
+from scottSock import scottSock
 import time
 
 from astropy.io import fits
 from astro.angles import *
 import tempfile
-import shlex
-import subprocess
+
+
 import os
-import select
 import math
-from astro.locales import mtlemmon
-import sys
+
+
 from ds9 import ds9 as DS9
 from m4kproc import mergem4k
-from fits_solver.m4k_imclient import main as imsolver
-from fits_solver.m4k_imclient import getobjects, mkfitstable
+from fits_solver.m4k_imclient import solvefitsfd 
+from fits_solver.m4k_imclient import getobjects
 from telescope import kuiper
 import numpy as np
 from threading import Thread
-from Queue import Empty, Queue; theQueue=Queue()
 import json
 
 try:
@@ -97,103 +98,35 @@ class catcher(Client):
 				del self.ALL
 					
 				 
-				rawfitsfd = fits.open(  "{}/{}".format( self.fpath, self.fname ) )
-				mergedfitsfd = mergem4k( rawfitsfd )
-				rawfitsfd.close()
+				reducedImg = fits.open(  "{}/{}".format( self.fpath, self.fname ) )
 				
-				if not os.path.exists( "{}/merged".format( self.fpath  ) ):
-					os.mkdir( "{}/merged".format( self.fpath  ) )
+				ImageDataList.append( {'img_name': "{}/{}".format(self.fpath, self.fname) } )
 				
-				mergedfitsfd.writeto( "{}/merged/{}".format( self.fpath, self.fname  ), clobber=self.clobber )
-				
-				self.ds9.set( "file {}/merged/{}".format( self.fpath, self.fname ) )
-				self.ds9.set( "zoom to fit" )
-				
-				objs = getobjects( mergedfitsfd[0].data )
-				fwhms = []
-				count = 0
-				for obj in objs:
-					
-					fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
-					
-					if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 10.0:# its fairly round
-						if obj['npix'] > 25:# Weed out hot pixels
-							
-							if showfwhm:
-								self.ds9.set("regions", 'ellipse( {0} {1} {3} {2} {4} ) '.format( obj['x'], obj['y'], obj['a'], obj['b'], obj['theta']*180/3.141592 -90) )
-								self.ds9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
-							
-							fwhms.append(fwhm)
-					if len(fwhms) == 0:
-						avgfwhm = False
-					else:
-						avgfwhm = sum(fwhms)/len(fwhms)
-					count+=1
-					if count > 500: break
-					
+				for task in PipeLineTasks:
 					try:
-						if tel:
-							focus = tel.reqFOCUS()
-						else:
-							focus = False
+						print "Attempting task", task.__name__
+						reducedImg = task( reducedImg )
+						if not isinstance( reducedImg, fits.hdu.hdulist.HDUList ):
+							raise Exception( "Task did not return fits type, Did you forget to return the fits file in your function definition?" )
+						print task.__name__, "did not give errors."
+						
+						print 
 					except Exception as err:
-						focus=False
-						#print err	
-							
-							
-				theQueue.put( {"name":self.fname, "fwhm": avgfwhm, 'focus':focus}, block=False )
-				"""
-				tmpname = tempfile.mktemp()
-				fname = "{0}.fits".format( tmpname )
-				print "writing fits file", fname
-				tmpfd = open( fname, 'wb' )
-				tmpfd.write( self.ALL )
-				tmpfd.close()
-				try:
-					self.ds9.set("mosaicimage {0}".format(fname))
-					self.ds9.set("scale zscale")
-					self.ds9.set("zoom to fit")
-				except Exception as err:
-					print err
-				outstr = self.infoStr.split()[1].replace('!', '')
-				
-				outpath = os.path.dirname(outstr)
-				outfile = os.path.basename(outstr)
-				
-				outfd = open(outstr, 'wb')
-				outfd.write(self.ALL)
-				outfd.close()
-				os.remove( fname  )
-				
-				curFocus = int(tel.reqFOCUS())
-				extra = {'focus':curFocus }
-
-				tel.comFOCUS(curFocus+10)
-				imsolver(outfile, outpath, **extra )
-				
-				
-
-				print "closing file"
-				
-				self.client.close()
-				"""
-				#hdu = fits.PrimaryHDU(numpy.transpose(self.img))
-				#hdulist = fits.HDUList([hdu])
-				#hdulist.writeto('new.fits')
-				#print self.img
-
-
-	
-
-	def fwhm( fitsfd, extnum=0 ):
-		objs = getobjects( fitsfd[extnum].data )
-		
-		fwhms = []
-		
-		for obj in objs:
-			obj['fwhm'] = 2*np.sqrt(math.log(2)*(obj['a'] + obj['b']))
-
-		return objs
+						print "there was a problem with task", task.__name__
+						print "The message is:", err.message
+						print "The args are", 
+						for arg in err.args: print arg,
+						print
+						print 
+						print
+					finally:
+						print "******************************************************"
+				if not os.path.exists( "{}/reduced_images".format( self.fpath ) ):
+					os.mkdir( "{}/reduced_images".format( self.fpath ) )
+				if os.path.exists( "{}/reduced_images/{}".format( self.fpath, self.fname ) ):
+					os.remove( "{}/reduced_images/{}".format( self.fpath, self.fname ) )
+				reducedImg.writeto( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) )
+				reducedImg.close()
 	
 	def handle( self, data ):
 		"""
@@ -229,46 +162,125 @@ class catcher(Client):
 		return 1
 
 
+def display( fitsfd ):
+	"""Name: display
+	Description: Displays the merged fitsfd file in 
+	the current ds9 display. If the MEF has not been merged
+	it will not display. 
+	"""
 	
-showfwhm = True
-
+	if len(fitsfd) == 1:
+		theDS9.set_pyfits( fitsfd )
+	else:
+		print "Does not handle Multiple Extensions yet"
 	
+	return fitsfd
 
+def displayObjects( fitsfd ):
+	"""
+		Name: displayObjects
+		Description: 
+			Uses python module SEP (https://sep.readthedocs.io/en/v0.5.x/) 
+			to extract sources and calulates their FWHM. It assumes the 
+			fits file has been merged by the  mergem4k pipeline task. 
+	"""
+	
+	objs = getobjects( fitsfd[0].data )
+	fwhms = []
+	count = 0
 
-def cmdserver(  ):
-	print "Starting Dataserver command server"
-	imdata = []
-	while 1:
+	for obj in objs:
 		
-		print "dserver>",
-		rawin = raw_input().split()
-		cmd = rawin[0]
-		if len(rawin) > 1:
-			args = rawin[1:]
-		else:
-			args = []
-			
-		if cmd == "clear":
-			theDS9.set( "regions show no" )
-		elif cmd == "unclear":
-			theDS9.set( "regions show yes" )
-		elif cmd == "imdata":
-			if args:
-				imcount = int(args[0])
-			else:
-				imcount = 1
-			for im in imdata[-imcount:]:
-					print json.dumps( im, indent=4 )
-			
+		fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
 
-		while 1:
-			if len(imdata) > 100:
-					del imdata[0]
-			try:
-				imdata.append( theQueue.get(block=False) )	
-			except Empty:
-				break
+		if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 10.0:# its fairly round
+			if obj['npix'] > 25:# Weed out hot pixels
+		
+
+				theDS9.set("regions", 'ellipse( {0} {1} {3} {2} {4} ) '.format( obj['x'], obj['y'], obj['a'], obj['b'], obj['theta']*180/3.141592 -90) )
+				theDS9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
+		
+				fwhms.append(fwhm)
+		
+			
+		
+		count+=1
+		if count > 500: break
+		
+	if len(fwhms) == 0:
+		avgfwhm = False
+	else:
+		avgfwhm = sum(fwhms)/len(fwhms)
+	if avgfwhm:
+		print "Avg FWHM is ", avgfwhm
+		saveImageInfo2List( avgfwhm=avgfwhm )
+		fitsfd[0].header['AVGFWHM'] = avgfwhm
+		
+	return fitsfd
 	
+
+def WCSsolve( fitsfd ):
+	resp = solvefitsfd(fitsfd)
+
+	if 'ra' in resp:
+		print "WCS RA is", resp['ra']
+		saveImageInfo2List( ra=resp['ra'] )
+	if 'dec' in resp:
+		print "WCS Dec is", resp['dec']
+		saveImageInfo2List( dec=resp['dec'] )
+	
+	
+	if 'wcs' in resp:
+		for key, val in resp['wcs'][0].header.iteritems():
+			fitsfd[0].header[key] = val
+		fitsfd[0].header[0] = 1
+	else: 	
+		print 
+		print "Image did not solve"
+		print "it will be noted in the 'SOLVED' header field"
+		fitsfd[0].header["SOLVED"] = 0
+	
+	return fitsfd
+
+def getFocus(fitsfd):
+	if tel:
+		focus = tel.reqFOCUS()
+		print "focus is ", focus
+		saveImageInfo2List( focus=focus )
+		fitsfd[0].header['focus'] = focus
+	else:
+		print "Telescope Communication Err"
+	return fitsfd
+
+def showregions( show=False ):
+	if show:
+		theDS9.set("regions show yes")
+	else:
+		theDS9.set("regions show no")
+	
+def saveImageInfo2List( **info ):
+
+	for key, val in info.iteritems():
+		ImageDataList[-1][key] = val
+
+
+	
+	
+global PipeLineTasks
+PipeLineTasks = [ mergem4k, display, displayObjects, getFocus, WCSsolve ]
+
+
+global ImageDataList
+ImageDataList = []
+
+	
+
+
+	
+
+def leave():
+	s.kill()
+	exit()	
 
 def testThread(  ):
 	while 1:
@@ -278,20 +290,17 @@ def testThread(  ):
 
 global theDS9
 theDS9 = DS9()
-theDS9.set("regions show no")
-SOLVE = False
+
+
 
 s=Server( port=6543, handler=catcher )
 serverThread = Thread( target=s.run )
 #serverThread.setDaemon(True)
-#serverThread.start()
+serverThread.start()
 
 
-#cmdThread = Thread( target=cmdserver )
-#cmdThread.setDaemon(True)
-#cmdThread.start()
 
-#main()
+
 
 
 
