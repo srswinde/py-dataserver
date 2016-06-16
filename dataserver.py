@@ -123,8 +123,8 @@ class catcher(Client):
 						print "******************************************************"
 				if not os.path.exists( "{}/reduced_images".format( self.fpath ) ):
 					os.mkdir( "{}/reduced_images".format( self.fpath ) )
-				if os.path.exists( "{}/reduced_images/{}".format( self.fpath, self.fname ) ):
-					os.remove( "{}/reduced_images/{}".format( self.fpath, self.fname ) )
+				if os.path.exists( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) ):
+					os.remove( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) )
 				reducedImg.writeto( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) )
 				reducedImg.close()
 	
