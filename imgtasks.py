@@ -1,6 +1,7 @@
 from astropy.io import fits
 from matplotlib import pyplot as plt
-
+from scottSock import scottSock
+import os
 
 class DataserverPipeLine(object):
 	def __init__( self ):
@@ -40,13 +41,13 @@ class DataserverPipeLine(object):
 	def pop(self, ii):
 		return self.tasks.pop(ii)
 	
-	def __call__( self )
+	def __call__( self ):
 		for task in self.tasks:
 			print "Attempting task", task.__name__
 			try:
 				self.current_fitsfd = task( self.current_fitsfd )
 			except Exception as err:
-				print task.__name__, "has an error":
+				print task.__name__, "has an error"
 				print err
 			finally:	
 				yield self.current_fitsfd
@@ -75,3 +76,46 @@ def findFocus( imglist ):
 			
 	plt.plot( focus, fwhms, 'r.' )
 	plt.show()
+	
+	
+def send_test_image( fname, outfile='/home/scott/data/outtest.fits', clobber=True ):
+	#fd = open( fname, 'rb')
+
+	fitsfd = fits.open( fname )
+	
+	width = 0
+	height = 0
+	for ext in fitsfd:
+		if hasattr( ext, 'data' ):
+			if ext.data != None:
+				width+=ext.data.shape[0]
+				height+=ext.data.shape[1]
+	
+	fitsfd.close()
+	fsize = os.stat(fname).st_size
+	
+	fd = open(fname, 'rb')
+	
+	
+	if clobber:
+		clobber_char = '!'
+	else:
+		clobber_char = ''
+	meta = "          {} {}{} 1 {} {} 0".format( fsize, clobber_char, outfile, width, height )
+	meta = meta + (256-len(meta))*' '
+	
+	data = meta+fd.read()
+	lendata = len(data)
+	soc = scottSock( 'localhost', 6543 )
+	
+	counter = 0
+	socsize = 1024
+	buffsize = 0
+	while buffsize < len(data):
+		sent = soc.send( data[buffsize:buffsize+1024] )
+		buffsize+=sent
+		print sent
+		
+	
+	
+	
