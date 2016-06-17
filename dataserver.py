@@ -12,9 +12,9 @@ import tempfile
 import os
 import math
 
-
+from imgtasks import *
 from ds9 import ds9 as DS9
-from m4kproc import mergem4k
+
 from fits_solver.m4k_imclient import solvefitsfd 
 from fits_solver.m4k_imclient import getobjects
 from telescope import kuiper
@@ -22,6 +22,7 @@ import numpy as np
 from threading import Thread
 import json
 
+import psutil
 try:
 	tel=kuiper()
 except Exception:
@@ -47,7 +48,7 @@ class catcher(Client):
 		self.client.settimeout( 0.5 )
 		self.clobber = False
 		self.ALL = ""
-		self.ds9 = theDS9
+
 
 
 	def run(self):
@@ -97,21 +98,47 @@ class catcher(Client):
 					imfile.write( self.ALL )
 				del self.ALL
 					
-				 
+				if not os.path.exists( "{}/reduced_images".format( self.fpath ) ):
+					os.mkdir( "{}/reduced_images".format( self.fpath ) )
+				if os.path.exists( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) ):
+					os.remove( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) )
+					 
 				reducedImg = fits.open(  "{}/{}".format( self.fpath, self.fname ) )
+
+				#ImageDataList.append( {'img_name': "{}/{}".format(self.fpath, self.fname) } )
+				PipeLineTasks.set_file( self.fname, self.fpath )
+				PipeLineTasks.set_fitsfd( reducedImg )
 				
-				ImageDataList.append( {'img_name': "{}/{}".format(self.fpath, self.fname) } )
-				
+				tempname = tempfile.mktemp()
+				reducedImg.writeto(tempname, clobber=True)
 				for task in PipeLineTasks:
 					try:
-						print "Attempting task", task.__name__
-						reducedImg = task( reducedImg )
-						if not isinstance( reducedImg, fits.hdu.hdulist.HDUList ):
-							raise Exception( "Task did not return fits type, Did you forget to return the fits file in your function definition?" )
-						print task.__name__, "did not give errors."
+
+						task_retn = task( reducedImg )
+						if type(task_retn) == dict:
+
+							PipeLineTasks.set_tally( task_retn )
+							if 'fitsfd' in task_retn.keys():
+								if isinstance( task_retn['fitsfd'], fits.hdu.hdulist.HDUList ):
+									reducedImg = task_retn['fitsfd']
+									
+								else:
+									raise Exception( "{} did not return fits type, Did you forget to return the fits file in your function definition?".format(task.func_name) )
+							
+						elif isinstance( task_retn, fits.hdu.hdulist.HDUList ):
+								reducedImg = task_retn
+						
+						
+						else:
+							raise Exception( "{} did not return fits type, Did you forget to return the fits file in your function definition?".format(task.func_name) )
+						
+						PipeLineTasks.set_fitsfd( reducedImg )
+						reducedImg.writeto(tempname, clobber=True)
+
+
 						
 						print 
-					except Exception as err:
+					except ZeroDivisionError as err:
 						print "there was a problem with task", task.__name__
 						print "The message is:", err.message
 						print "The args are", 
@@ -119,15 +146,13 @@ class catcher(Client):
 						print
 						print 
 						print
-					finally:
-						print "******************************************************"
-				if not os.path.exists( "{}/reduced_images".format( self.fpath ) ):
-					os.mkdir( "{}/reduced_images".format( self.fpath ) )
-				if os.path.exists( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) ):
-					os.remove( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) )
+
+
+				print "Tasks Finished"
+				print 
 				reducedImg.writeto( "{}/reduced_images/r_{}".format( self.fpath, self.fname ) )
 				reducedImg.close()
-	
+				if os.path.exists(tempname): os.remove(tempname)
 	def handle( self, data ):
 		"""
 		This method is called in the run method
@@ -162,29 +187,24 @@ class catcher(Client):
 		return 1
 
 
-def display( fitsfd ):
-	"""Name: display
-	Description: Displays the merged fitsfd file in 
-	the current ds9 display. If the MEF has not been merged
-	it will not display. 
-	"""
+def leave():
+	try:
+		myServer.kill()
+	except Exception as err:
+		print err
 	
-	if len(fitsfd) == 1:
-		theDS9.set_pyfits( fitsfd )
-	else:
-		print "Does not handle Multiple Extensions yet"
-	
-	return fitsfd
+	exit()
+
 
 def displayObjects( fitsfd ):
 	"""
-		Name: displayObjects
-		Description: 
-			Uses python module SEP (https://sep.readthedocs.io/en/v0.5.x/) 
-			to extract sources and calulates their FWHM. It assumes the 
-			fits file has been merged by the  mergem4k pipeline task. 
+	Name: displayObjects
+Description: 
+	Uses python module SEP (https://sep.readthedocs.io/en/v0.5.x/) 
+	to extract sources and calulates their FWHM. It assumes the 
+	fits file has been merged by the  mergem4k pipeline task. 
 	"""
-	
+	theDS9 = ds9()
 	objs = getobjects( fitsfd[0].data )
 	fwhms = []
 	count = 0
@@ -212,22 +232,24 @@ def displayObjects( fitsfd ):
 	else:
 		avgfwhm = sum(fwhms)/len(fwhms)
 	if avgfwhm:
-		print "Avg FWHM is ", avgfwhm
-		saveImageInfo2List( avgfwhm=avgfwhm )
 		fitsfd[0].header['AVGFWHM'] = avgfwhm
 		
-	return fitsfd
+	return {'fitsfd':fitsfd, 'avgfwhm':avgfwhm }
 	
 
 def WCSsolve( fitsfd ):
 	resp = solvefitsfd(fitsfd)
 
 	if 'ra' in resp:
-		print "WCS RA is", resp['ra']
-		saveImageInfo2List( ra=resp['ra'] )
+
+		ra = resp['ra']
+	else: 
+		ra = None
 	if 'dec' in resp:
-		print "WCS Dec is", resp['dec']
-		saveImageInfo2List( dec=resp['dec'] )
+
+		dec = resp['dec']
+	else:
+		dec = resp['dec']	
 	
 	
 	if 'wcs' in resp:
@@ -240,17 +262,19 @@ def WCSsolve( fitsfd ):
 		print "it will be noted in the 'SOLVED' header field"
 		fitsfd[0].header["SOLVED"] = 0
 	
-	return fitsfd
+	return {'fitsfd':fitsfd, 'wcsra':ra, 'wcsdec':dec}
 
 def getFocus(fitsfd):
 	if tel:
 		focus = tel.reqFOCUS()
-		print "focus is ", focus
-		saveImageInfo2List( focus=focus )
+
+
 		fitsfd[0].header['focus'] = focus
 	else:
-		print "Telescope Communication Err"
-	return fitsfd
+		focus = None
+
+		
+	return {'fitsfd':fitsfd, 'focus':focus }
 
 def showregions( show=False ):
 	if show:
@@ -258,52 +282,107 @@ def showregions( show=False ):
 	else:
 		theDS9.set("regions show no")
 	
-def saveImageInfo2List( **info ):
-
-	for key, val in info.iteritems():
-		ImageDataList[-1][key] = val
 
 
-	
-	
-global PipeLineTasks
-PipeLineTasks = [ mergem4k, display, displayObjects, getFocus, WCSsolve ]
-
-
-global ImageDataList
-ImageDataList = []
-
-	
-
-
-	
-
-def leave():
-	s.kill()
-	exit()	
-
-def testThread(  ):
-	while 1:
-		print "foo"
-		time.sleep(5.0)
+class _serverThread( Thread ):
+	def __init__( self, port=6543, handler=catcher ):
+		Thread.__init__(self)
 		
+		self.server = Server( port, handler)
+		
+	def run( self ):
+		self.server.run()
+  
+  
+  	def kill( self ):
+  		self.server.kill()
+	
 
-global theDS9
-theDS9 = DS9()
+def kill_other(port=6543):
+	for pid in psutil.get_pid_list():
+		proc = psutil.Process(pid)
+		try:
+			conns = proc.get_connections()
+		except psutil.AccessDenied:
+			conns = None
+		if conns:
+			for x in conns:
+				if x.status == psutil.CONN_LISTEN and x.local_address[1] == port:
+					print "Uh oh other version of dataserver open!"
+					print "Trying to kill process {}".format(pid)
+					proc.kill()
+						
+		
+	
+
+def tally( hmm, infos=None ):	
+	if infos:
+		infolist = infos.split()
+	
+		
+	order = PipeLineTasks.tally_info[-1][1].keys()
+	
+	for imgname, data in PipeLineTasks.tally_info.iteritems():
+		print imgname,
+		if infos:
+			for info in infolist:
+				if info in data:
+					print data[info], 
+		else:
+			for key in order:
+				print data[key], 
+				
+		print
+	
+def main():
+	kill_other()
+
+	global PipeLineTasks
+	PipeLineTasks = DataserverPipeLine()
+
+	print hasattr( mergem4k, '__call__' )
+
+	PipeLineTasks[0] = mergem4k
+	PipeLineTasks[1] = display
+	PipeLineTasks[2] = displayObjects
+	PipeLineTasks[3] = getFocus
+	PipeLineTasks[4] = WCSsolve
 
 
 
-s=Server( port=6543, handler=catcher )
-serverThread = Thread( target=s.run )
-#serverThread.setDaemon(True)
-serverThread.start()
+	print "Current PipeLine tasks are:"
+	PipeLineTasks.show_tasks()
+
+	print "Starting dataserver thread"
+	print "Use leave() to exit so the server shuts down properly."
+	global myServer
+	myServer = _serverThread( port=6543, handler=catcher )
+	myServer.start()
+
+
+	time.sleep(1.0)
+	
+	if not myServer.isAlive():
+		print "server did not run! Exiting."
+		exit()
+
+	ip = get_ipython()
+	ip.define_magic("tally", tally)
+	ip.define_magic("leave", leave)
+	ip.define_magic("exit", leave)
+	ip.define_magic("quit", leave)
+
+	
+#send_test_image('/home/scott/data/pointing/pointing0004.fits')
 
 
 
 
+main()
 
+def send_images(a):
 
-
+	send_test_image( '/home/scott/data/pointing/pointing0004.fits', outfile='/home/scott/data/outtest{}.fits'.format(a))
 
 
 
