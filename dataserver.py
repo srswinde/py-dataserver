@@ -1,5 +1,6 @@
 #!/usr/bin/ipython -i
 
+import psutil
 from server import Server, Client
 from scottSock import scottSock
 import time
@@ -12,17 +13,21 @@ import tempfile
 import os
 import math
 
+
+
+from ds9 import ds9
+
+
 from imgtasks import *
-from ds9 import ds9 as DS9
 
 from fits_solver.m4k_imclient import solvefitsfd 
-from fits_solver.m4k_imclient import getobjects
+
 from telescope import kuiper
 import numpy as np
 from threading import Thread
 import json
 
-import psutil
+
 try:
 	tel=kuiper()
 except Exception:
@@ -113,28 +118,18 @@ class catcher(Client):
 				reducedImg.writeto(tempname, clobber=True)
 				for task in PipeLineTasks:
 					try:
-
+						print task.__name__
 						task_retn = task( reducedImg )
-						if type(task_retn) == dict:
+						reducedImg = task_retn['fitsfd']
 
-							PipeLineTasks.set_tally( task_retn )
-							if 'fitsfd' in task_retn.keys():
-								if isinstance( task_retn['fitsfd'], fits.hdu.hdulist.HDUList ):
-									reducedImg = task_retn['fitsfd']
-									
-								else:
-									raise Exception( "{} did not return fits type, Did you forget to return the fits file in your function definition?".format(task.func_name) )
-							
-						elif isinstance( task_retn, fits.hdu.hdulist.HDUList ):
-								reducedImg = task_retn
+						PipeLineTasks.set_tally( task_retn )
+
+
 						
-						
-						else:
-							raise Exception( "{} did not return fits type, Did you forget to return the fits file in your function definition?".format(task.func_name) )
-						
-						PipeLineTasks.set_fitsfd( reducedImg )
 						reducedImg.writeto(tempname, clobber=True)
-
+						#reducedImg.close()
+						#reduceImg = fits.open(tempname)
+						PipeLineTasks.set_fitsfd( reducedImg )
 
 						
 						print 
@@ -187,7 +182,7 @@ class catcher(Client):
 		return 1
 
 
-def leave():
+def leave(foo=None):
 	try:
 		myServer.kill()
 	except Exception as err:
@@ -196,60 +191,23 @@ def leave():
 	exit()
 
 
-def displayObjects( fitsfd ):
-	"""
-	Name: displayObjects
-Description: 
-	Uses python module SEP (https://sep.readthedocs.io/en/v0.5.x/) 
-	to extract sources and calulates their FWHM. It assumes the 
-	fits file has been merged by the  mergem4k pipeline task. 
-	"""
-	theDS9 = ds9()
-	objs = getobjects( fitsfd[0].data )
-	fwhms = []
-	count = 0
 
-	for obj in objs:
-		
-		fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
-
-		if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 10.0:# its fairly round
-			if obj['npix'] > 25:# Weed out hot pixels
-		
-
-				theDS9.set("regions", 'ellipse( {0} {1} {3} {2} {4} ) '.format( obj['x'], obj['y'], obj['a'], obj['b'], obj['theta']*180/3.141592 -90) )
-				theDS9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
-		
-				fwhms.append(fwhm)
-		
-			
-		
-		count+=1
-		if count > 500: break
-		
-	if len(fwhms) == 0:
-		avgfwhm = False
-	else:
-		avgfwhm = sum(fwhms)/len(fwhms)
-	if avgfwhm:
-		fitsfd[0].header['AVGFWHM'] = avgfwhm
-		
-	return {'fitsfd':fitsfd, 'avgfwhm':avgfwhm }
 	
 
 def WCSsolve( fitsfd ):
 	resp = solvefitsfd(fitsfd)
 
+	
+	
 	if 'ra' in resp:
-
 		ra = resp['ra']
 	else: 
 		ra = None
+		
 	if 'dec' in resp:
-
 		dec = resp['dec']
 	else:
-		dec = resp['dec']	
+		dec = None
 	
 	
 	if 'wcs' in resp:
@@ -288,7 +246,7 @@ class _serverThread( Thread ):
 	def __init__( self, port=6543, handler=catcher ):
 		Thread.__init__(self)
 		
-		self.server = Server( port, handler)
+		self.server = Server( port, handler, tryagain=True )
 		
 	def run( self ):
 		self.server.run()
@@ -298,22 +256,21 @@ class _serverThread( Thread ):
   		self.server.kill()
 	
 
-def kill_other(port=6543):
-	for pid in psutil.get_pid_list():
-		proc = psutil.Process(pid)
+def check_procs(port=6543):
+	for proc in psutil.process_iter():
 		try:
-			conns = proc.get_connections()
+			conns = proc.connections()
 		except psutil.AccessDenied:
 			conns = None
 		if conns:
 			for x in conns:
-				if x.status == psutil.CONN_LISTEN and x.local_address[1] == port:
+				if x.status == psutil.CONN_LISTEN and x.laddr[1] == port:
 					print "Uh oh other version of dataserver open!"
-					print "Trying to kill process {}".format(pid)
+					print "Trying to kill process {}".format(proc.pid)
 					proc.kill()
 						
 		
-	
+
 
 def tally( hmm, infos=None ):	
 	if infos:
@@ -335,12 +292,10 @@ def tally( hmm, infos=None ):
 		print
 	
 def main():
-	kill_other()
+	#check_procs()
 
 	global PipeLineTasks
 	PipeLineTasks = DataserverPipeLine()
-
-	print hasattr( mergem4k, '__call__' )
 
 	PipeLineTasks[0] = mergem4k
 	PipeLineTasks[1] = display

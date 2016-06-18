@@ -7,6 +7,9 @@ import collections
 from m4kproc import mergem4k
 import tempfile
 import json
+from fits_solver.m4k_imclient import getobjects
+import numpy as np
+import math
 
 class DataserverPipeLine(object):
 	def __init__( self ):
@@ -29,6 +32,7 @@ class DataserverPipeLine(object):
 					output+=str(task.func_doc)+'\n'
 			ii+=1
 		output+="*************************************************************\n"
+		return output
 	
 	def add_task(self, func):
 		
@@ -45,16 +49,18 @@ class DataserverPipeLine(object):
 		if not hasattr( func, '__call__' ):
 			raise TypeError("Task must be callable.")
 		
+		thisTask = TASK( func )
+		
 		if (ii+1) > len(self.tasks):
-			self.tasks.append( func )
+			self.tasks.append( thisTask )
 		else:
-			self.tasks[ii] = func
+			self.tasks[ii] = thisTask
 
 	def append( self, func ):
 		if not hasattr( func, '__call__' ):
 			raise TypeError("Task must be callable.")
 			
-		self.tasks.append( func )
+		self.tasks.append( TASK(func) )
 
 
 	def pop(self, ii):
@@ -84,10 +90,10 @@ class DataserverPipeLine(object):
 		return self.current_fitsfd
 		
 	def __str__(self):
-		self.show_tasks()
+		return str( [func.func_name for func in self.tasks] )
 		
 	def __repr__( self ):
-		self.show_tasks()
+		return self.__str__()
 
 	def set_file(self, fname, fpath):
 		self.current_imname = fname
@@ -98,7 +104,45 @@ class DataserverPipeLine(object):
 			print key
 			print json.dumps(vals, indent=4)
 
-	
+
+
+class TASK( object ):
+	def __init__( self, func ):
+		self.func = func
+		self.__name__ = func.__name__
+		self.func_doc = func.func_doc
+		self.func_name = func.func_name
+		
+	def __call__( self, fitsfd ):
+
+		func_resp = self.func( fitsfd )
+		dict_resp = {}
+		if type(func_resp) == dict:
+			dict_resp.update(func_resp)
+			if 'fitsfd' not in func_resp.keys():
+				dict_resp['fitsfd'] = fitsfd
+			else:
+				if not isinstance( func_resp['fitsfd'], fits.hdu.hdulist.HDUList ):
+					func_resp['fitsfd'] = fitsfd
+				
+		elif isinstance( func_resp, fits.hdu.hdulist.HDUList ):
+			dict_resp['fitsfd'] = func_resp
+		
+		else:
+			dict_resp['fitsfd'] = fitsfd
+		
+
+		return dict_resp
+		
+	def __str__( self ):
+		if self.func.func_doc:
+			doc = self.func.func_doc
+		else:
+			doc = "No Documentation"
+			
+		return "{}\n\t{}".format( self.func.func_name, doc )
+		
+
 class TALLY( object ):
 	def __init__( self ):
 		self.keymap = []
@@ -153,9 +197,55 @@ def findFocus( imglist ):
 			
 	plt.plot( focus, fwhms, 'r.' )
 	plt.show()
+
+
+def displayObjects( fitsfd ):
+	"""
+	Name: displayObjects
+Description: 
+	Uses python module SEP (https://sep.readthedocs.io/en/v0.5.x/) 
+	to extract sources and calulates their FWHM. It assumes the 
+	fits file has been merged by the  mergem4k pipeline task. 
+	"""
 	
+	print "fitsfd is right here", fitsfd
+	theDS9 = ds9()
+	objs = getobjects( fitsfd[0].data )
+	fwhms = []
+	count = 0
+
+	for obj in objs:
+		
+		fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
+
+		if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 300.0:# its fairly round
+			if obj['npix'] > 25:# Weed out hot pixels
+		
+
+				theDS9.set("regions", 'ellipse( {0} {1} {3} {2} {4} ) '.format( obj['x'], obj['y'], obj['a'], obj['b'], obj['theta']*180/3.141592 -90) )
+				#theDS9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
+		
+				fwhms.append(fwhm)
+		
+			
+		
+		count+=1
+		if count > 500: break
+		
+	if len(fwhms) == 0:
+		avgfwhm = False
+	else:
+		avgfwhm = sum(fwhms)/len(fwhms)
+	if avgfwhm:
+		fitsfd[0].header['AVGFWHM'] = avgfwhm
+		
+	return {'fitsfd':fitsfd, 'avgfwhm':avgfwhm }	
 
 def display( fitsfd ):
+	"""
+Display an single extension of MEF file in DS9 
+	"""
+
 	myDS9 = ds9()
 	fname = fitsfd.filename()
 	if fname is None:
@@ -189,7 +279,7 @@ def displayMosaic( fitsfd ):
 	myDS9.set("zoom to fit")
 	return fitsfd
 	
-def send_test_image( fname, outfile='/home/scott/data/outtest.fits', clobber=True ):
+def send_test_image( fname, outfile='test.fits', clobber=True ):
 
 
 	fitsfd = fits.open( fname )
