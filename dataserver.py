@@ -13,14 +13,10 @@ import tempfile
 import os
 import math
 
-
-
 from ds9 import ds9
 
 
 from imgtasks import *
-
-from fits_solver.m4k_imclient import solvefitsfd 
 
 from telescope import kuiper
 import numpy as np
@@ -28,10 +24,7 @@ from threading import Thread
 import json
 
 
-try:
-	tel=kuiper()
-except Exception:
-	tel=False
+
 
 class catcher(Client):
 	"""
@@ -111,25 +104,22 @@ class catcher(Client):
 				reducedImg = fits.open(  "{}/{}".format( self.fpath, self.fname ) )
 
 				#ImageDataList.append( {'img_name': "{}/{}".format(self.fpath, self.fname) } )
-				PipeLineTasks.set_file( self.fname, self.fpath )
-				PipeLineTasks.set_fitsfd( reducedImg )
+				PLTasks.set_file( self.fname, self.fpath )
+				PLTasks.set_fitsfd( reducedImg )
 				
 				tempname = tempfile.mktemp()
 				reducedImg.writeto(tempname, clobber=True)
-				for task in PipeLineTasks:
+				for task in PLTasks:
 					try:
-						print task.__name__
+
 						task_retn = task( reducedImg )
 						reducedImg = task_retn['fitsfd']
 
-						PipeLineTasks.set_tally( task_retn )
+						PLTasks.set_tally( task_retn )
 
 
-						
 						reducedImg.writeto(tempname, clobber=True)
-						#reducedImg.close()
-						#reduceImg = fits.open(tempname)
-						PipeLineTasks.set_fitsfd( reducedImg )
+						PLTasks.set_fitsfd( reducedImg )
 
 						
 						print 
@@ -194,51 +184,7 @@ def leave(foo=None):
 
 	
 
-def WCSsolve( fitsfd ):
-	resp = solvefitsfd(fitsfd)
 
-	
-	
-	if 'ra' in resp:
-		ra = resp['ra']
-	else: 
-		ra = None
-		
-	if 'dec' in resp:
-		dec = resp['dec']
-	else:
-		dec = None
-	
-	
-	if 'wcs' in resp:
-		for key, val in resp['wcs'][0].header.iteritems():
-			fitsfd[0].header[key] = val
-		fitsfd[0].header[0] = 1
-	else: 	
-		print 
-		print "Image did not solve"
-		print "it will be noted in the 'SOLVED' header field"
-		fitsfd[0].header["SOLVED"] = 0
-	
-	return {'fitsfd':fitsfd, 'wcsra':ra, 'wcsdec':dec}
-
-def getFocus(fitsfd):
-	if tel:
-		focus = tel.reqFOCUS()
-
-
-		fitsfd[0].header['focus'] = focus
-	else:
-		focus = None
-
-		
-	return {'fitsfd':fitsfd, 'focus':focus }
-
-def showregions( show=False ):
-	if show:
-		theDS9.set("regions show yes")
-	else:
-		theDS9.set("regions show no")
 	
 
 
@@ -277,9 +223,9 @@ def tally( hmm, infos=None ):
 		infolist = infos.split()
 	
 		
-	order = PipeLineTasks.tally_info[-1][1].keys()
+	order = PLTasks.tally_info[-1][1].keys()
 	
-	for imgname, data in PipeLineTasks.tally_info.iteritems():
+	for imgname, data in PLTasks.tally_info.iteritems():
 		print imgname,
 		if infos:
 			for info in infolist:
@@ -294,19 +240,19 @@ def tally( hmm, infos=None ):
 def main():
 	#check_procs()
 
-	global PipeLineTasks
-	PipeLineTasks = DataserverPipeLine()
+	global PLTasks
+	PLTasks = DataserverPipeLine()
 
-	PipeLineTasks[0] = mergem4k
-	PipeLineTasks[1] = display
-	PipeLineTasks[2] = displayObjects
-	PipeLineTasks[3] = getFocus
-	PipeLineTasks[4] = WCSsolve
+	PLTasks.add_task(  mergem4k )
+	PLTasks.add_task( display )
+	PLTasks.add_task( displayObjects )
+	#PLTasks.add_task( getFocus )
+	#PLTasks.add_task( WCSsolve )
 
 
 
 	print "Current PipeLine tasks are:"
-	PipeLineTasks.show_tasks()
+	PLTasks.show_tasks()
 
 	print "Starting dataserver thread"
 	print "Use leave() to exit so the server shuts down properly."

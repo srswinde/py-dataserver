@@ -7,9 +7,16 @@ import collections
 from m4kproc import mergem4k
 import tempfile
 import json
-from fits_solver.m4k_imclient import getobjects
+from fits_solver.m4k_imclient import getobjects, solvefitsfd
 import numpy as np
 import math
+from telescope import kuiper
+
+try:
+	tel=kuiper()
+except Exception:
+	tel=False
+
 
 class DataserverPipeLine(object):
 	def __init__( self ):
@@ -39,7 +46,7 @@ class DataserverPipeLine(object):
 		if not hasattr( func, '__call__' ):
 			raise TypeError("Task must be callable.")
 		
-		self.tasks.append( func )
+		self.tasks.append( TASK( func ) )
 	
 	def __getitem__( self, ii ):
 		return self.tasks[ii]
@@ -130,7 +137,7 @@ class TASK( object ):
 		
 		else:
 			dict_resp['fitsfd'] = fitsfd
-		
+
 
 		return dict_resp
 		
@@ -171,7 +178,17 @@ class TALLY( object ):
 			
 		else:
 			return self.valmap[key]
-			
+
+	
+	def __getattr__( self, attr ):
+		
+		attr_list = []
+		for vals in self.valmap:
+			for key, value in vals.iteritems():
+				if key == attr:
+					attr_list.append( value )
+					
+		return attr_list
 			
 	def pop(key):
 		if type(key) == int:
@@ -186,6 +203,7 @@ class TALLY( object ):
 				
 	def __repr__(self):
 		return str(dict(zip(self.keymap, self.valmap)))
+		
 def findFocus( imglist ):
 	fwhms = []
 	focus = []
@@ -208,9 +226,8 @@ Description:
 	fits file has been merged by the  mergem4k pipeline task. 
 	"""
 	
-	print "fitsfd is right here", fitsfd
 	theDS9 = ds9()
-	objs = getobjects( fitsfd[0].data )
+	objs = getobjects( fitsfd[0].data, 0.50 )
 	fwhms = []
 	count = 0
 
@@ -230,7 +247,7 @@ Description:
 			
 		
 		count+=1
-		if count > 500: break
+		#if count > 1000: break
 		
 	if len(fwhms) == 0:
 		avgfwhm = False
@@ -318,5 +335,49 @@ def send_test_image( fname, outfile='test.fits', clobber=True ):
 
 		
 	
+def WCSsolve( fitsfd ):
+	resp = solvefitsfd(fitsfd)
+
 	
+	
+	if 'ra' in resp:
+		ra = resp['ra']
+	else: 
+		ra = None
+		
+	if 'dec' in resp:
+		dec = resp['dec']
+	else:
+		dec = None
+	
+	
+	if 'wcs' in resp:
+		for key, val in resp['wcs'][0].header.iteritems():
+			fitsfd[0].header[key] = val
+		fitsfd[0].header[0] = 1
+	else: 	
+		print 
+		print "Image did not solve"
+		print "it will be noted in the 'SOLVED' header field"
+		fitsfd[0].header["SOLVED"] = 0
+	
+	return {'fitsfd':fitsfd, 'wcsra':ra, 'wcsdec':dec}
+
+def getFocus(fitsfd):
+	if tel:
+		focus = tel.reqFOCUS()
+
+
+		fitsfd[0].header['focus'] = focus
+	else:
+		focus = None
+
+		
+	return {'fitsfd':fitsfd, 'focus':focus }
+
+def showregions( show=False ):
+	if show:
+		theDS9.set("regions show yes")
+	else:
+		theDS9.set("regions show no")	
 	
