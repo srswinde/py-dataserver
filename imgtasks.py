@@ -114,6 +114,8 @@ class DataserverPipeLine(object):
 
 
 class TASK( object ):
+	"""Function like object that wraps around
+	functions to be added to the DataserverPipelineTasks"""
 	def __init__( self, func ):
 		self.func = func
 		self.__name__ = func.__name__
