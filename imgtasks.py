@@ -217,6 +217,45 @@ def findFocus( imglist ):
 	plt.show()
 
 
+def sextract(fitsfd):
+        """
+        Name: displayObjects
+Description: 
+        Uses python module SEP (https://sep.readthedocs.io/en/v0.5.x/) 
+        to extract sources and calulates their FWHM. It assumes the 
+        fits file has been merged by the  mergem4k pipeline task. 
+        """
+
+        objs = getobjects( fitsfd[0].data, 10.0 )
+        fwhms = []
+        count = 0
+
+        for obj in objs:
+
+                fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
+
+                if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 300.0:# its fairly round
+                        if obj['npix'] > 25:# Weed out hot pixels
+
+
+
+                                fwhms.append(fwhm)
+
+
+
+                count+=1
+                #if count > 1000: break
+
+        if len(fwhms) == 0:
+                avgfwhm = False
+        else:
+                avgfwhm = sum(fwhms)/len(fwhms)
+        if avgfwhm:
+                fitsfd[0].header['AVGFWHM'] = avgfwhm
+
+        return {'fitsfd':fitsfd, 'avgfwhm':avgfwhm }
+	
+
 def displayObjects( fitsfd ):
 	"""
 	Name: displayObjects
@@ -227,7 +266,7 @@ Description:
 	"""
 	
 	theDS9 = ds9()
-	objs = getobjects( fitsfd[0].data, 0.50 )
+	objs = getobjects( fitsfd[0].data, 20.0 )
 	fwhms = []
 	count = 0
 

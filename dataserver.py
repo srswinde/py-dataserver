@@ -5,6 +5,9 @@ from server import Server, Client
 from scottSock import scottSock
 import time
 
+from IPython import get_ipython
+
+
 from astropy.io import fits
 from astro.angles import *
 import tempfile
@@ -245,10 +248,10 @@ def main():
 
 	PLTasks.add_task(  mergem4k )
 	PLTasks.add_task( display )
-	PLTasks.add_task( displayObjects )
-	#PLTasks.add_task( getFocus )
+	#PLTasks.add_task( displayObjects )
+	PLTasks.add_task( getFocus )
 	#PLTasks.add_task( WCSsolve )
-
+	PLTasks.add_task( sextract )
 
 
 	print "Current PipeLine tasks are:"
@@ -268,6 +271,7 @@ def main():
 		exit()
 
 	ip = get_ipython()
+
 	ip.define_magic("tally", tally)
 	ip.define_magic("leave", leave)
 	ip.define_magic("exit", leave)
