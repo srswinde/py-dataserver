@@ -19,6 +19,7 @@ except Exception:
 
 
 class DataserverPipeLine(object):
+	"""Comments !!!"""
 	def __init__( self ):
 		self.tally_info = TALLY()
 		self.tasks = []	
@@ -236,7 +237,7 @@ Description:
 
                 fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
 
-                if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 300.0:# its fairly round
+                if 0.01 < obj['a']/obj['b'] and obj['a']/obj['b'] < 300.0:# its fairly round
                         if obj['npix'] > 25:# Weed out hot pixels
 
 
@@ -268,26 +269,29 @@ Description:
 	"""
 	
 	theDS9 = ds9()
-	objs = getobjects( fitsfd[0].data, 20.0 )
+	if len(fitsfd) == 1:
+		objs_list = [getobjects( fitsfd[0].data, 20.0 )]
+	else:
+		objs_list = [getobjects( fitsfd[1].data, 20.0 ), getobjects( fitsfd[2].data, 20.0 ) ]
 	fwhms = []
 	count = 0
+	for objs in objs_list:
+		for obj in objs:
+			
+			fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
 
-	for obj in objs:
-		
-		fwhm = 2*np.sqrt( math.log(2)*( obj['a'] + obj['b'] ) )
-
-		if 0.1 < obj['a']/obj['b'] and obj['a']/obj['b'] < 300.0:# its fairly round
-			if obj['npix'] > 25:# Weed out hot pixels
+			if 0.01 < obj['a']/obj['b'] and obj['a']/obj['b'] < 300.0:# its fairly round
+				if obj['npix']  > 1:# Weed out hot pixels
 		
 
-				theDS9.set("regions", 'ellipse( {0} {1} {3} {2} {4} ) '.format( obj['x'], obj['y'], obj['a'], obj['b'], obj['theta']*180/3.141592 -90) )
-				#theDS9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
+					theDS9.set("regions", 'ellipse( {0} {1} {3} {2} {4} ) '.format( obj['x']*3, obj['y']*3, obj['a'], obj['b'], obj['theta']*180/3.141592 -90) )
+					#theDS9.set('regions', "text {0} {1} # text={{{4:0.2f}}}".format(obj['x'], obj['y']-7, obj['a']/obj['b'], obj['npix'], fwhm ) )
 		
-				fwhms.append(fwhm)
+					fwhms.append(fwhm)
 		
 			
 		
-		count+=1
+			count+=1
 		#if count > 1000: break
 		
 	if len(fwhms) == 0:
@@ -360,12 +364,12 @@ def send_test_image( fname, outfile='test.fits', clobber=True ):
 		clobber_char = '!'
 	else:
 		clobber_char = ''
-	meta = "          {} {}{} 1 {} {} 0".format( fsize, clobber_char, outfile, width, height )
+	meta = "          {} {}{} 1 {} {} 0".format( fsize, clobber_char, '/home/scott/'+outfile, width, height )
 	meta = meta + (256-len(meta))*' '
 	
 	data = meta+fd.read()
 	lendata = len(data)
-	soc = scottSock( 'localhost', 6543 )
+	soc = scottSock( 'localhost', 6500 )
 	
 	counter = 0
 	socsize = 1024

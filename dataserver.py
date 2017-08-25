@@ -236,7 +236,10 @@ def tally( hmm, infos=None ):
 					print data[info], 
 		else:
 			for key in order:
-				print data[key], 
+				try:
+					print data[key], 
+				except Exception:
+					pass
 				
 		print
 	
@@ -246,12 +249,12 @@ def main():
 	global PLTasks
 	PLTasks = DataserverPipeLine()
 
-	PLTasks.add_task(  mergem4k )
+	#PLTasks.add_task(  mergem4k )
 	PLTasks.add_task( display )
-	#PLTasks.add_task( displayObjects )
+	PLTasks.add_task( displayObjects )
 	PLTasks.add_task( getFocus )
 	#PLTasks.add_task( WCSsolve )
-	PLTasks.add_task( sextract )
+	#PLTasks.add_task( sextract )
 
 
 	print "Current PipeLine tasks are:"
