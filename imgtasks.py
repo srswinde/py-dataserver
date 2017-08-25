@@ -11,7 +11,7 @@ from fits_solver.m4k_imclient import getobjects, solvefitsfd
 import numpy as np
 import math
 from telescope import kuiper
-
+import time
 try:
 	tel=kuiper()
 except Exception:
@@ -410,9 +410,9 @@ def WCSsolve( fitsfd ):
 
 def getFocus(fitsfd):
 	if tel:
-		focus = tel.reqFOCUS()
+		focus = int(tel.reqFOCUS())
 
-
+		print "writing focus"
 		fitsfd[0].header['focus'] = focus
 	else:
 		focus = None
@@ -426,3 +426,32 @@ def showregions( show=False ):
 	else:
 		theDS9.set("regions show no")	
 	
+
+
+
+def focusrun(steps=10, stepsize=20):
+	steps=int(steps)
+	focus=int(tel.reqFOCUS())
+	stepsize=int(stepsize)
+	s=scottSock("10.30.1.10", 2402)
+	for a in range(-steps/2, steps/2):
+		tel.comFOCUS(focus+a*stepsize)
+		#print PLTasks
+		time.sleep(3.0)
+		s.converse("exposure.expose1 20.00 'object' 'focusrun'\r\n")
+		pixleft = 0
+		lpixleft = 0
+		while True:
+			try:
+				pixleft = int( s.converse("exposure.get_pixels_remaining\r\n").strip().split()[-1] )
+			except Exception as err:
+				print err
+			print lpixleft, pixleft
+			if lpixleft > 0  and pixleft == 0:
+				break
+			lpixleft = pixleft
+			time.sleep(0.5)
+		time.sleep(5.0)
+			
+		
+
