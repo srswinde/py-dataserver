@@ -92,6 +92,14 @@ class catcher(Client):
 				if self.clobber and os.path.exists( "{}/{}".format(self.fpath, self.fname) ):
 					os.remove( "{}/{}".format(self.fpath, self.fname) )
 				
+
+				try:
+					if true:
+						with open("{}/ppfilenamefile".format(self.fpath) ) as fd:							fd.write(self.fname)
+				except Exception as err:
+					print "couldnt do watcher stuff", err
+				
+							
 				with open( "{}/{}".format( self.fpath, self.fname ), 'wb' ) as imfile:
 					#write the raw image
 					if self.ALL.endswith("\n"):
