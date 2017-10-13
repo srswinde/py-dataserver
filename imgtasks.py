@@ -2,7 +2,7 @@ from astropy.io import fits
 from matplotlib import pyplot as plt
 from scottSock import scottSock
 import os
-from ds9 import ds9
+from pyds9 import ds9
 import collections
 from m4kproc import mergem4k
 import tempfile
