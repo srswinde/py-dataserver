@@ -95,7 +95,8 @@ class catcher(Client):
 
 				try:
 					if True:
-						with open("/home/bigobs/ppfilenamefile".format(self.fpath), 'w' ) as fd:							fd.write(self.fname)
+						with open("/home/bigobs/ppfilenamefile".format(self.fpath), 'w' ) as fd:							
+							fd.write(self.fname+'\n')
 				except Exception as err:
 					print "couldnt do watcher stuff", err
 				
@@ -258,7 +259,7 @@ def main():
 	PLTasks = DataserverPipeLine()
 
 	#PLTasks.add_task(  mergem4k )
-	#PLTasks.add_task( display )
+	PLTasks.add_task( display )
 	#PLTasks.add_task( displayObjects )
 	#PLTasks.add_task( getFocus )
 	#PLTasks.add_task( WCSsolve )
@@ -283,10 +284,10 @@ def main():
 
 	ip = get_ipython()
 
-	#ip.define_magic("tally", tally)
-	#ip.define_magic("leave", leave)
-	#ip.define_magic("exit", leave)
-	#ip.define_magic("quit", leave)
+	ip.define_magic("tally", tally)
+	ip.define_magic("leave", leave)
+	ip.define_magic("exit", leave)
+	ip.define_magic("quit", leave)
 
 	
 #send_test_image('/home/scott/data/pointing/pointing0004.fits')
